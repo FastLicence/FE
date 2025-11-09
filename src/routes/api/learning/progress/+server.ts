@@ -1,22 +1,8 @@
 import { json } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
 import type { LectureProgress } from '$lib/types';
-import { updateMockProgress } from '$lib/mocks/learning';
+import { getSupabaseServerClient } from '$lib/server/supabaseClient';
 
-/**
- * POST /api/learning/progress
- * 학습 진행률 저장
- *
- * Request body:
- * - lectureId: string
- * - secondsWatched: number
- * - percent: number (0-100)
- *
- * Returns:
- * - LectureProgress (저장된 진행률)
- *
- * Requires: Authentication
- */
 export const POST: RequestHandler = async ({ request, locals }) => {
 	try {
 		const user = locals.user;
@@ -33,10 +19,9 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 			);
 		}
 
-		const body = await request.json();
-		const { lectureId, secondsWatched, percent } = body as LectureProgress;
+		const payload = (await request.json()) as LectureProgress;
+		const { lectureId, secondsWatched, percent } = payload;
 
-		// 유효성 검사
 		if (!lectureId || typeof secondsWatched !== 'number' || typeof percent !== 'number') {
 			return json(
 				{
@@ -49,61 +34,67 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 			);
 		}
 
-		if (percent < 0 || percent > 100) {
+		const supabase = getSupabaseServerClient();
+
+		const { data: lecture, error: lectureError } = await supabase
+			.from('lectures')
+			.select('course_id')
+			.eq('id', lectureId)
+			.single();
+
+		if (lectureError) {
+			throw lectureError;
+		}
+
+		const { data: access } = await supabase
+			.from('user_course_access')
+			.select('id')
+			.eq('user_id', user.id)
+			.eq('course_id', lecture.course_id)
+			.eq('status', 'active')
+			.maybeSingle();
+
+		if (!access) {
 			return json(
 				{
 					error: {
-						code: 'VALIDATION_ERROR',
-						message: 'percent는 0-100 사이의 값이어야 합니다.'
+						code: 'FORBIDDEN',
+						message: '해당 강의에 대한 수강권이 없습니다.'
 					}
 				},
-				{ status: 400 }
+				{ status: 403 }
 			);
 		}
 
-		// TODO: Supabase 연동
-		// 1. 수강권 확인 (해당 강의의 course_id를 통해)
-		// const { data: lecture } = await supabase
-		//   .from('lectures')
-		//   .select('course_id')
-		//   .eq('id', lectureId)
-		//   .single();
+		const { data, error: progressError } = await supabase
+			.from('lecture_progress')
+			.upsert(
+				{
+					user_id: user.id,
+					lecture_id: lectureId,
+					last_watched_second: secondsWatched,
+					percent,
+					completed: percent >= 90,
+					updated_at: new Date().toISOString()
+				},
+				{
+					onConflict: 'user_id,lecture_id'
+				}
+			)
+			.select('lecture_id, last_watched_second, percent')
+			.single();
 
-		// const { data: access } = await supabase
-		//   .from('user_course_access')
-		//   .select('status')
-		//   .eq('user_id', user.id)
-		//   .eq('course_id', lecture.course_id)
-		//   .eq('status', 'active')
-		//   .maybeSingle();
+		if (progressError) {
+			throw progressError;
+		}
 
-		// if (!access) {
-		//   return json({ error: { code: 'FORBIDDEN', message: '수강권이 없습니다.' } }, { status: 403 });
-		// }
-
-		// 2. lecture_progress upsert
-		// const { data, error } = await supabase
-		//   .from('lecture_progress')
-		//   .upsert({
-		//     user_id: user.id,
-		//     lecture_id: lectureId,
-		//     last_watched_second: secondsWatched,
-		//     completed: percent >= 90,
-		//     updated_at: new Date().toISOString()
-		//   }, {
-		//     onConflict: 'user_id,lecture_id'
-		//   })
-		//   .select()
-		//   .single();
-
-		// 임시: 목업 데이터 업데이트
-		const updatedProgress = updateMockProgress(lectureId, {
+		const progress: LectureProgress = {
 			lectureId,
-			secondsWatched,
-			percent
-		});
+			secondsWatched: data?.last_watched_second ?? secondsWatched,
+			percent: data?.percent ?? percent
+		};
 
-		return json(updatedProgress);
+		return json(progress);
 	} catch (error) {
 		console.error('Error saving progress:', error);
 		return json(

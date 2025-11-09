@@ -7,7 +7,7 @@
 		data: {
 			course: CourseDetail;
 			requiresAuth: boolean;
-			usedFallback: boolean;
+			error?: { message: string } | null;
 		};
 	}>();
 
@@ -26,9 +26,9 @@
 		<p class="text-sm text-base-content/80">빠르고 안전한 결제 시스템으로 바로 학습을 시작하세요.</p>
 	</div>
 
-	{#if data.usedFallback}
+	{#if data.error}
 		<div role="alert" class="alert alert-warning text-sm">
-			임시 결제 환경으로 접속했습니다. 실제 PG 연동은 준비 중입니다.
+			{data.error.message}
 		</div>
 	{/if}
 

@@ -14,16 +14,6 @@ import type {
 	PaymentProvider,
 	UserProfile
 } from '$lib/types';
-import { getMockCourseDetail, getMockCourses } from '$lib/mocks/courses';
-import { confirmMockPayment, createMockOrder } from '$lib/mocks/orders';
-import { getMockMyPage, updateMockProfile } from '$lib/mocks/profile';
-import {
-	addMockNote,
-	addMockQuestion,
-	getMockLearningLecture,
-	updateMockProgress
-} from '$lib/mocks/learning';
-
 type ApiFetchOptions = {
 	token?: string;
 	method?: string;
@@ -99,19 +89,7 @@ export const fetchCourses = async (
 	if (limit) query.set('limit', String(limit));
 
 	const path = query.toString() ? `/api/courses?${query.toString()}` : '/api/courses';
-	const result = await apiFetch<CourseListResponse>(fetchFn, path, { token });
-
-	if (!result.data) {
-		return {
-			data: { items: getMockCourses(limit), nextCursor: null },
-			error: result.error ?? {
-				code: 'MOCK_DATA',
-				message: '목업 데이터를 사용했습니다.'
-			}
-		};
-	}
-
-	return result;
+	return apiFetch<CourseListResponse>(fetchFn, path, { token });
 };
 
 export const fetchCourseDetail = async (
@@ -120,39 +98,14 @@ export const fetchCourseDetail = async (
 	{ token }: { token?: string } = {}
 ): Promise<ApiResponse<CourseDetail>> => {
 	const path = `/api/courses/${courseId}`;
-	const result = await apiFetch<CourseDetail>(fetchFn, path, { token });
-
-	if (!result.data) {
-		const fallback = getMockCourseDetail(courseId);
-		return {
-			data: fallback,
-			error: result.error ?? {
-				code: 'MOCK_DATA',
-				message: '목업 데이터를 사용했습니다.'
-			}
-		};
-	}
-
-	return result;
+	return apiFetch<CourseDetail>(fetchFn, path, { token });
 };
 
 export const fetchMyPage = async (
 	fetchFn: typeof fetch,
 	{ token }: { token?: string } = {}
 ): Promise<ApiResponse<MyPageData>> => {
-	const result = await apiFetch<MyPageData>(fetchFn, '/api/me', { token });
-
-	if (!result.data) {
-		return {
-			data: getMockMyPage(),
-			error: result.error ?? {
-				code: 'MOCK_DATA',
-				message: '마이페이지 데이터를 목업으로 불러왔습니다.'
-			}
-		};
-	}
-
-	return result;
+	return apiFetch<MyPageData>(fetchFn, '/api/me', { token });
 };
 
 type UpdateProfilePayload = Partial<Pick<UserProfile, 'nickname' | 'address' | 'avatarUrl'>>;
@@ -162,23 +115,11 @@ export const updateProfile = async (
 	payload: UpdateProfilePayload,
 	{ token }: { token?: string } = {}
 ): Promise<ApiResponse<UserProfile>> => {
-	const result = await apiFetch<UserProfile>(fetchFn, '/api/me/profile', {
+	return apiFetch<UserProfile>(fetchFn, '/api/me/profile', {
 		method: 'PATCH',
 		body: payload,
 		token
 	});
-
-	if (!result.data) {
-		return {
-			data: updateMockProfile(payload),
-			error: result.error ?? {
-				code: 'MOCK_DATA',
-				message: '프로필을 임시로 업데이트했습니다.'
-			}
-		};
-	}
-
-	return result;
 };
 
 export const fetchLearningLecture = async (
@@ -186,23 +127,9 @@ export const fetchLearningLecture = async (
 	lectureId: string,
 	{ token }: { token?: string } = {}
 ): Promise<ApiResponse<LearningLectureData>> => {
-	const result = await apiFetch<LearningLectureData>(
-		fetchFn,
-		`/api/learning/lecture/${lectureId}`,
-		{ token }
-	);
-
-	if (!result.data) {
-		return {
-			data: getMockLearningLecture(lectureId),
-			error: result.error ?? {
-				code: 'MOCK_DATA',
-				message: '학습 데이터를 목업으로 불러왔습니다.'
-			}
-		};
-	}
-
-	return result;
+	return apiFetch<LearningLectureData>(fetchFn, `/api/learning/lecture/${lectureId}`, {
+		token
+	});
 };
 
 export const saveLearningProgress = async (
@@ -210,23 +137,11 @@ export const saveLearningProgress = async (
 	progress: LectureProgress,
 	{ token }: { token?: string } = {}
 ): Promise<ApiResponse<LectureProgress>> => {
-	const result = await apiFetch<LectureProgress>(fetchFn, '/api/learning/progress', {
+	return apiFetch<LectureProgress>(fetchFn, '/api/learning/progress', {
 		method: 'POST',
 		body: progress,
 		token
 	});
-
-	if (!result.data) {
-		return {
-			data: updateMockProgress(progress.lectureId, progress),
-			error: result.error ?? {
-				code: 'MOCK_DATA',
-				message: '진행률 저장을 목업으로 처리했습니다.'
-			}
-		};
-	}
-
-	return result;
 };
 
 export const saveLearningNote = async (
@@ -234,23 +149,11 @@ export const saveLearningNote = async (
 	payload: NotePayload,
 	{ token }: { token?: string } = {}
 ): Promise<ApiResponse<NoteEntry>> => {
-	const result = await apiFetch<NoteEntry>(fetchFn, '/api/learning/notes', {
+	return apiFetch<NoteEntry>(fetchFn, '/api/learning/notes', {
 		method: 'POST',
 		body: payload,
 		token
 	});
-
-	if (!result.data) {
-		return {
-			data: addMockNote(payload),
-			error: result.error ?? {
-				code: 'MOCK_DATA',
-				message: '메모 저장을 목업으로 처리했습니다.'
-			}
-		};
-	}
-
-	return result;
 };
 
 export const submitLearningQuestion = async (
@@ -259,23 +162,11 @@ export const submitLearningQuestion = async (
 	question: string,
 	{ token }: { token?: string } = {}
 ): Promise<ApiResponse<NoteEntry>> => {
-	const result = await apiFetch<NoteEntry>(
+	return apiFetch<NoteEntry>(
 		fetchFn,
 		'/functions/v1/learning/answerQuestion',
 		{ method: 'POST', body: { lectureId, question }, token }
 	);
-
-	if (!result.data) {
-		return {
-			data: addMockQuestion(lectureId, question),
-			error: result.error ?? {
-				code: 'MOCK_DATA',
-				message: '질문 전송을 목업으로 처리했습니다.'
-			}
-		};
-	}
-
-	return result;
 };
 
 type CreateOrderPayload = {
@@ -288,23 +179,11 @@ export const createOrder = async (
 	payload: CreateOrderPayload,
 	{ token }: { token?: string } = {}
 ): Promise<ApiResponse<CreateOrderResponse>> => {
-	const result = await apiFetch<CreateOrderResponse>(
+	return apiFetch<CreateOrderResponse>(
 		fetchFn,
 		'/functions/v1/payments/createOrder',
 		{ method: 'POST', body: payload, token }
 	);
-
-	if (!result.data) {
-		return {
-			data: createMockOrder(payload.courseId, payload.provider),
-			error: result.error ?? {
-				code: 'MOCK_DATA',
-				message: '결제 생성을 목업 데이터로 처리했습니다.'
-			}
-		};
-	}
-
-	return result;
 };
 
 type ConfirmPaymentPayload = {
@@ -316,21 +195,9 @@ export const confirmPayment = async (
 	payload: ConfirmPaymentPayload,
 	{ token }: { token?: string } = {}
 ): Promise<ApiResponse<PaymentConfirmation>> => {
-	const result = await apiFetch<PaymentConfirmation>(
+	return apiFetch<PaymentConfirmation>(
 		fetchFn,
 		'/functions/v1/payments/confirmPayment',
 		{ method: 'POST', body: payload, token }
 	);
-
-	if (!result.data) {
-		return {
-			data: confirmMockPayment(payload.orderNumber),
-			error: result.error ?? {
-				code: 'MOCK_DATA',
-				message: '결제 확인을 목업 데이터로 처리했습니다.'
-			}
-		};
-	}
-
-	return result;
 };

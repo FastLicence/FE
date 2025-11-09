@@ -1,23 +1,30 @@
 import { json } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
-import type { LearningLectureData } from '$lib/types';
-import { getMockLearningLecture } from '$lib/mocks/learning';
+import type { LearningLectureData, LectureProgress, LectureSummary, NoteEntry } from '$lib/types';
+import { getSupabaseServerClient } from '$lib/server/supabaseClient';
 
-/**
- * GET /api/learning/lecture/:lectureId
- * 학습 페이지 데이터 조회
- *
- * Returns:
- * - lecture: { videoUrl, title, description, ... }
- * - course: { id, title }
- * - notes: NoteEntry[] (자동 요약, 메모, Q&A)
- * - progress: LectureProgress | null (진행률)
- * - siblings: LectureSummary[] (같은 코스의 다른 강의)
- * - hasAccess: boolean (수강권 여부)
- *
- * Requires: Authentication
- * Access control: 수강권이 없으면 403
- */
+const mapLectureSummary = (row: any): LectureSummary => ({
+	id: row.id,
+	title: row.title,
+	durationMinutes: row.duration_minutes ?? null,
+	previewAvailable: row.preview_available ?? false
+});
+
+const mapNoteEntry = (row: any): NoteEntry => ({
+	noteId: row.id,
+	lectureId: row.lecture_id,
+	noteType: row.note_type,
+	content: row.content,
+	question: row.question ?? null,
+	createdAt: row.created_at
+});
+
+const mapProgress = (row: any): LectureProgress => ({
+	lectureId: row.lecture_id,
+	secondsWatched: row.last_watched_second ?? 0,
+	percent: row.percent ?? 0
+});
+
 export const GET: RequestHandler = async ({ params, locals }) => {
 	try {
 		const { lectureId } = params;
@@ -35,62 +42,110 @@ export const GET: RequestHandler = async ({ params, locals }) => {
 			);
 		}
 
-		// TODO: Supabase 연동
-		// 1. lecture 정보 조회 (+ course_id)
-		// const { data: lecture, error: lectureError } = await supabase
-		//   .from('lectures')
-		//   .select('*, courses!inner(id, title)')
-		//   .eq('id', lectureId)
-		//   .single();
+		const supabase = getSupabaseServerClient();
 
-		// 2. 수강권 확인
-		// const { data: access } = await supabase
-		//   .from('user_course_access')
-		//   .select('status')
-		//   .eq('user_id', user.id)
-		//   .eq('course_id', lecture.course_id)
-		//   .eq('status', 'active')
-		//   .maybeSingle();
+		const { data: lectureRow, error: lectureError } = await supabase
+			.from('lectures')
+			.select(
+				`
+					id,
+					title,
+					description,
+					video_url,
+					duration_minutes,
+					preview_available,
+					course_id,
+					courses (
+						id,
+						title
+					)
+				`
+			)
+			.eq('id', lectureId)
+			.maybeSingle();
 
-		// if (!access) {
-		//   return json({ error: { code: 'FORBIDDEN', message: '수강권이 없습니다.' } }, { status: 403 });
-		// }
+		if (lectureError) {
+			throw lectureError;
+		}
 
-		// 3. Storage에서 signed URL 생성
-		// const { data: signedUrl } = await supabase.storage
-		//   .from('videos')
-		//   .createSignedUrl(lecture.video_path, 60 * 60); // 1시간 만료
+		if (!lectureRow) {
+			return json(
+				{
+					error: {
+						code: 'NOT_FOUND',
+						message: '강의를 찾을 수 없습니다.'
+					}
+				},
+				{ status: 404 }
+			);
+		}
 
-		// 4. 노트 조회
-		// const { data: notes } = await supabase
-		//   .from('notes')
-		//   .select('*')
-		//   .eq('user_id', user.id)
-		//   .eq('lecture_id', lectureId)
-		//   .order('created_at', { ascending: false });
+		const { data: access } = await supabase
+			.from('user_course_access')
+			.select('id')
+			.eq('user_id', user.id)
+			.eq('course_id', lectureRow.course_id)
+			.eq('status', 'active')
+			.maybeSingle();
 
-		// 5. 진행률 조회
-		// const { data: progress } = await supabase
-		//   .from('lecture_progress')
-		//   .select('*')
-		//   .eq('user_id', user.id)
-		//   .eq('lecture_id', lectureId)
-		//   .maybeSingle();
+		if (!access) {
+			return json(
+				{
+					error: {
+						code: 'FORBIDDEN',
+						message: '해당 강의에 대한 수강권이 없습니다.'
+					}
+				},
+				{ status: 403 }
+			);
+		}
 
-		// 6. 같은 코스의 다른 강의들
-		// const { data: siblings } = await supabase
-		//   .from('lectures')
-		//   .select('id, title, duration_minutes, preview_available')
-		//   .eq('course_id', lecture.course_id)
-		//   .order('order_index', { ascending: true });
+		const courseInfo = Array.isArray(lectureRow.courses)
+			? lectureRow.courses[0]
+			: lectureRow.courses;
 
-		// 임시: 목업 데이터 반환
-		const mockData = getMockLearningLecture(lectureId);
+		const [{ data: notes, error: notesError }, { data: progressRow, error: progressError }, { data: siblings, error: siblingsError }] =
+			await Promise.all([
+				supabase
+					.from('notes')
+					.select('id, lecture_id, note_type, content, question, created_at')
+					.eq('user_id', user.id)
+					.eq('lecture_id', lectureId)
+					.order('created_at', { ascending: false }),
+				supabase
+					.from('lecture_progress')
+					.select('lecture_id, last_watched_second, percent')
+					.eq('user_id', user.id)
+					.eq('lecture_id', lectureId)
+					.maybeSingle(),
+				supabase
+					.from('lectures')
+					.select('id, title, duration_minutes, preview_available')
+					.eq('course_id', lectureRow.course_id)
+					.order('order_index', { ascending: true })
+			]);
 
-		// hasAccess는 임시로 true (실제로는 수강권 확인 필요)
+		if (notesError || progressError || siblingsError) {
+			throw notesError ?? progressError ?? siblingsError;
+		}
+
 		const learningData: LearningLectureData = {
-			...mockData,
-			hasAccess: true // TODO: 실제 수강권 확인 로직
+			lecture: {
+				id: lectureRow.id,
+				title: lectureRow.title,
+				durationMinutes: lectureRow.duration_minutes ?? null,
+				previewAvailable: lectureRow.preview_available ?? false,
+				videoUrl: lectureRow.video_url ?? '',
+				description: lectureRow.description ?? null
+			},
+			course: {
+				id: courseInfo?.id ?? lectureRow.course_id,
+				title: courseInfo?.title ?? ''
+			},
+			notes: (notes ?? []).map(mapNoteEntry),
+			progress: progressRow ? mapProgress(progressRow) : null,
+			siblings: (siblings ?? []).map(mapLectureSummary),
+			hasAccess: true
 		};
 
 		return json(learningData);

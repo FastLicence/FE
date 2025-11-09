@@ -34,7 +34,6 @@ export const load: PageServerLoad = async ({ params, fetch, locals }) => {
 
 	return {
 		requiresAuth: false,
-		lesson: result.data,
-		usedFallback: result.error?.code === 'MOCK_DATA'
+		lesson: result.data
 	};
 };

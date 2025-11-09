@@ -18,19 +18,19 @@ export const load: PageServerLoad = async ({ url, fetch, locals }) => {
 	}
 
 	let course = null;
-	let courseUsedFallback = false;
+	let courseError = null;
 	if (confirmation.data.courseId) {
 		const courseResult = await fetchCourseDetail(fetch, confirmation.data.courseId, {
 			token: locals.accessToken ?? undefined
 		});
 		course = courseResult.data ?? null;
-		courseUsedFallback = courseResult.error?.code === 'MOCK_DATA';
+		courseError = courseResult.error ?? null;
 	}
 
 	return {
 		orderNumber,
 		confirmation: confirmation.data,
 		course,
-		usedFallback: confirmation.error?.code === 'MOCK_DATA' || courseUsedFallback
+		error: confirmation.error ?? courseError
 	};
 };

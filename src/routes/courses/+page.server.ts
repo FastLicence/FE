@@ -1,6 +1,5 @@
 import { fetchCourses } from '$lib/api';
-import { getMockCourses } from '$lib/mocks/courses';
-import type { CourseSummary, DifficultyLevel } from '$lib/types';
+import type { DifficultyLevel } from '$lib/types';
 import type { PageServerLoad } from './$types';
 
 const isDifficulty = (value: string | null): value is DifficultyLevel | 'all' => {
@@ -30,56 +29,6 @@ const mapSortToApiParam = (value: SortOption): 'popular' | 'latest' | 'priceAsc'
 	}
 };
 
-const applyFallbackFilters = ({
-	courses,
-	search,
-	difficulty,
-	sort
-}: {
-	courses: CourseSummary[];
-	search: string;
-	difficulty: DifficultyLevel | 'all';
-	sort: SortOption;
-}) => {
-	let filtered = [...courses];
-
-	if (search) {
-		const query = search.toLowerCase();
-		filtered = filtered.filter((course) => {
-			const titleMatch = course.title.toLowerCase().includes(query);
-			const instructorMatch = course.instructor.toLowerCase().includes(query);
-			const tagMatch = course.tags?.some((tag) => tag.toLowerCase().includes(query)) ?? false;
-			return titleMatch || instructorMatch || tagMatch;
-		});
-	}
-
-	if (difficulty !== 'all') {
-		filtered = filtered.filter((course) => course.difficulty === difficulty);
-	}
-
-	const priceValue = (course: CourseSummary) => course.salePrice ?? course.originalPrice;
-	const publishedAtValue = (course: CourseSummary) =>
-		course.publishedAt ? Date.parse(course.publishedAt) : 0;
-	const popularityScore = (course: CourseSummary) => course.reviewCount ?? 0;
-
-	switch (sort) {
-		case 'price_low':
-			filtered.sort((a, b) => priceValue(a) - priceValue(b));
-			break;
-		case 'price_high':
-			filtered.sort((a, b) => priceValue(b) - priceValue(a));
-			break;
-		case 'newest':
-			filtered.sort((a, b) => publishedAtValue(b) - publishedAtValue(a));
-			break;
-		default:
-			filtered.sort((a, b) => popularityScore(b) - popularityScore(a));
-			break;
-	}
-
-	return filtered;
-};
-
 export const load: PageServerLoad = async ({ fetch, url, locals }) => {
 	const search = url.searchParams.get('search') ?? '';
 	const difficultyParam = url.searchParams.get('difficulty');
@@ -97,33 +46,14 @@ export const load: PageServerLoad = async ({ fetch, url, locals }) => {
 		token: locals.accessToken ?? undefined
 	});
 
-	let courses: CourseSummary[] = [];
-	let nextCursor: string | null = null;
-	let usedFallback = false;
-
-	if (result.data?.items) {
-		courses = result.data.items;
-		nextCursor = result.data.nextCursor ?? null;
-	} else {
-		const filteredFallback = applyFallbackFilters({
-			courses: getMockCourses(),
-			search,
-			difficulty,
-			sort
-		});
-		courses = filteredFallback.slice(0, limit);
-		usedFallback = true;
-	}
-
 	return {
-		courses,
-		nextCursor,
+		courses: result.data?.items ?? [],
+		nextCursor: result.data?.nextCursor ?? null,
 		filters: {
 			search,
 			difficulty,
 			sort
 		},
-		usedFallback,
 		error: result.error ?? null
 	};
 };

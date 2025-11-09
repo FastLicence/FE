@@ -13,7 +13,6 @@ export const load: PageServerLoad = async ({ fetch, params, locals }) => {
 	}
 
 	return {
-		course: result.data,
-		usedFallback: result.error?.code === 'MOCK_DATA'
+		course: result.data
 	};
 };

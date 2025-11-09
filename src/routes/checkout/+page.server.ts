@@ -20,6 +20,6 @@ export const load: PageServerLoad = async ({ fetch, url, locals }) => {
 	return {
 		course: result.data,
 		requiresAuth: !locals.user,
-		usedFallback: result.error?.code === 'MOCK_DATA'
+		error: result.error ?? null
 	};
 };

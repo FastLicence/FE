@@ -1,96 +1,111 @@
 import { json } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
 import type { CourseListResponse, CourseSummary, DifficultyLevel } from '$lib/types';
-import { getMockCourses } from '$lib/mocks/courses';
+import { getSupabaseServerClient } from '$lib/server/supabaseClient';
 
-/**
- * GET /api/courses
- * 강의 목록 조회 (필터/검색/정렬 지원)
- *
- * Query params:
- * - search: string (제목/강사명 검색)
- * - difficulty: DifficultyLevel | 'all'
- * - sort: 'latest' | 'popular' | 'priceAsc' | 'priceDesc'
- * - cursor: string (pagination)
- * - limit: number (default: 20)
- */
-export const GET: RequestHandler = async ({ url, locals }) => {
+const mapCourseSummary = (row: any): CourseSummary => ({
+	id: row.id,
+	title: row.title,
+	subtitle: row.subtitle ?? null,
+	description: row.description ?? null,
+	publishedAt: row.published_at ?? null,
+	thumbnailUrl: row.thumbnail_url ?? null,
+	instructor: row.instructor,
+	difficulty: row.difficulty,
+	lectureCount: row.lecture_count ?? null,
+	rating: row.rating ?? null,
+	reviewCount: row.review_count ?? null,
+	originalPrice: row.original_price,
+	salePrice: row.sale_price ?? null,
+	tags: Array.isArray(row.tags)
+		? row.tags
+		: row.tags
+			? String(row.tags)
+					.split(',')
+					.map((tag) => tag.trim())
+					.filter(Boolean)
+			: []
+});
+
+const normalizeSortParam = (
+	value: string | null
+): 'popular' | 'latest' | 'priceAsc' | 'priceDesc' => {
+	switch (value) {
+		case 'latest':
+		case 'newest':
+			return 'latest';
+		case 'priceAsc':
+		case 'price_low':
+			return 'priceAsc';
+		case 'priceDesc':
+		case 'price_high':
+			return 'priceDesc';
+		default:
+			return 'popular';
+	}
+};
+
+export const GET: RequestHandler = async ({ url }) => {
 	try {
-		// Query params 파싱
+		const supabase = getSupabaseServerClient();
 		const search = url.searchParams.get('search');
 		const difficulty = url.searchParams.get('difficulty') as DifficultyLevel | 'all' | null;
 		const sort = url.searchParams.get('sort');
-		const cursor = url.searchParams.get('cursor');
 		const limit = parseInt(url.searchParams.get('limit') ?? '20', 10);
 
-		// TODO: Supabase 연동
-		// const { data, error } = await supabase
-		//   .from('courses')
-		//   .select('*')
-		//   .eq('is_active', true)
-		//   .ilike('title', search ? `%${search}%` : '%')
-		//   .limit(limit);
-
-		// 임시: 목업 데이터 반환
-		const normalizeSortParam = (
-			value: string | null
-		): 'popular' | 'latest' | 'priceAsc' | 'priceDesc' => {
-			switch (value) {
-				case 'latest':
-				case 'newest':
-					return 'latest';
-				case 'priceAsc':
-				case 'price_low':
-					return 'priceAsc';
-				case 'priceDesc':
-				case 'price_high':
-					return 'priceDesc';
-				default:
-					return 'popular';
-			}
-		};
-
 		const sortParam = normalizeSortParam(sort);
-		const mockCourses = getMockCourses();
 
-		// 검색어 필터 (목업 데이터에 적용)
-		let filteredCourses = mockCourses;
+		let query = supabase
+			.from('courses')
+			.select(
+				`
+					id,
+					title,
+					subtitle,
+					description,
+					published_at,
+					thumbnail_url,
+					instructor,
+					difficulty,
+					lecture_count,
+					rating,
+					review_count,
+					original_price,
+					sale_price,
+					tags
+				`
+			)
+			.eq('is_active', true)
+			.limit(limit);
+
 		if (search) {
-			const searchLower = search.toLowerCase();
-			filteredCourses = filteredCourses.filter(
-				(course) =>
-					course.title.toLowerCase().includes(searchLower) ||
-					course.instructor.toLowerCase().includes(searchLower)
-			);
+			const pattern = `%${search}%`;
+			query = query.or(`title.ilike.${pattern},instructor.ilike.${pattern}`);
 		}
 
-		// 난이도 필터
 		if (difficulty && difficulty !== 'all') {
-			filteredCourses = filteredCourses.filter((course) => course.difficulty === difficulty);
+			query = query.eq('difficulty', difficulty);
 		}
-
-		// 정렬
-		const priceValue = (course: CourseSummary) => course.salePrice ?? course.originalPrice;
-		const publishedAtValue = (course: CourseSummary) =>
-			course.publishedAt ? Date.parse(course.publishedAt) : 0;
-		const popularityScore = (course: CourseSummary) => course.reviewCount ?? 0;
 
 		if (sortParam === 'priceAsc') {
-			filteredCourses.sort((a, b) => priceValue(a) - priceValue(b));
+			query = query.order('sale_price', { ascending: true, nullsFirst: true });
 		} else if (sortParam === 'priceDesc') {
-			filteredCourses.sort((a, b) => priceValue(b) - priceValue(a));
+			query = query.order('sale_price', { ascending: false });
 		} else if (sortParam === 'latest') {
-			filteredCourses.sort((a, b) => publishedAtValue(b) - publishedAtValue(a));
+			query = query.order('published_at', { ascending: false });
 		} else {
-			filteredCourses.sort((a, b) => popularityScore(b) - popularityScore(a));
+			query = query.order('review_count', { ascending: false });
 		}
 
-		const limitedCourses = filteredCourses.slice(0, limit);
-		const hasMore = filteredCourses.length > limit;
+		const { data, error } = await query;
+
+		if (error) {
+			throw error;
+		}
 
 		const response: CourseListResponse = {
-			items: limitedCourses,
-			nextCursor: hasMore ? `cursor_${Date.now()}` : null
+			items: (data ?? []).map(mapCourseSummary),
+			nextCursor: null
 		};
 
 		return json(response);

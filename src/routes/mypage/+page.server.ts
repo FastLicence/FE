@@ -16,6 +16,6 @@ export const load: PageServerLoad = async ({ fetch, locals }) => {
 		requiresAuth: false,
 		profile: result.data?.profile ?? null,
 		courses: result.data?.courses ?? [],
-		usedFallback: result.error?.code === 'MOCK_DATA'
+		error: result.error ?? null
 	};
 };

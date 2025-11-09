@@ -20,7 +20,7 @@
 			title: '로그인 필요 페이지',
 			description: '아래 경로는 sb-access-token 쿠키가 있어야 전체 UI가 보입니다.',
 			items: [
-				{ href: '/mypage', label: '마이페이지', note: '프로필 + 진행 강의 (getMockMyPage)' },
+				{ href: '/mypage', label: '마이페이지', note: '프로필 + 진행 강의' },
 				{ href: '/learning', label: '학습 홈', note: '마이페이지 데이터 재사용' },
 				{ href: '/learning/mock-lecture-1', label: '학습 플레이어', note: '진행률/노트 목업' },
 				{ href: '/checkout?courseId=course-ai-accelerator', label: '결제 페이지', note: '수강권 확인' },

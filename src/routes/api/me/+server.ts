@@ -1,18 +1,22 @@
 import { json } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
-import type { MyPageData } from '$lib/types';
-import { getMockMyPage } from '$lib/mocks/profile';
+import type { MyPageData, UserCourseSummary, UserProfile } from '$lib/types';
+import { getSupabaseServerClient } from '$lib/server/supabaseClient';
 
-/**
- * GET /api/me
- * 마이페이지 데이터 조회
- *
- * Returns:
- * - profile: UserProfile (닉네임, 이메일, 아바타, 주소)
- * - courses: UserCourseSummary[] (수강 중인 강의 + 진행률)
- *
- * Requires: Authentication
- */
+const mapUserCourse = (row: any): UserCourseSummary | null => {
+	const course = row.courses;
+	if (!course) return null;
+
+	return {
+		courseId: course.id,
+		title: course.title,
+		thumbnailUrl: course.thumbnail_url ?? null,
+		progressPercent: row.progress_percent ?? 0,
+		lastLectureId: row.last_lecture_id ?? null,
+		lastLectureTitle: row.last_lecture_title ?? null
+	};
+};
+
 export const GET: RequestHandler = async ({ locals }) => {
 	try {
 		const user = locals.user;
@@ -29,43 +33,61 @@ export const GET: RequestHandler = async ({ locals }) => {
 			);
 		}
 
-		// TODO: Supabase 연동
-		// const { data: profile, error: profileError } = await supabase
-		//   .from('users')
-		//   .select('*')
-		//   .eq('id', user.id)
-		//   .single();
+		const supabase = getSupabaseServerClient();
 
-		// const { data: courses, error: coursesError } = await supabase
-		//   .from('user_course_access')
-		//   .select(`
-		//     course_id,
-		//     progress_percent,
-		//     courses (
-		//       id,
-		//       title,
-		//       thumbnail_url
-		//     )
-		//   `)
-		//   .eq('user_id', user.id)
-		//   .eq('status', 'active');
+		const profilePromise = supabase
+			.from('users')
+			.select('nickname, address_text, avatar_url')
+			.eq('id', user.id)
+			.maybeSingle();
 
-		// 임시: 목업 데이터 반환
-		const mockData = getMockMyPage();
+		const coursesPromise = supabase
+			.from('user_course_access')
+			.select(
+				`
+					course_id,
+					progress_percent,
+					last_lecture_id,
+					last_lecture_title,
+					courses (
+						id,
+						title,
+						thumbnail_url
+					)
+				`
+			)
+			.eq('user_id', user.id)
+			.eq('status', 'active');
 
-		// 실제 사용자 정보로 프로필 덮어쓰기
-		const myPageData: MyPageData = {
-			profile: {
-				id: user.id,
-				email: user.email,
-				nickname: user.nickname ?? user.email.split('@')[0],
-				avatarUrl: user.avatarUrl ?? null,
-				address: mockData.profile.address // 주소는 DB에서 가져와야 함
-			},
-			courses: mockData.courses
+		const [{ data: profileRow, error: profileError }, { data: courseRows, error: courseError }] =
+			await Promise.all([profilePromise, coursesPromise]);
+
+		if (profileError) {
+			throw profileError;
+		}
+
+		if (courseError) {
+			throw courseError;
+		}
+
+		const profile: UserProfile = {
+			id: user.id,
+			email: user.email,
+			nickname: profileRow?.nickname ?? user.nickname ?? user.email.split('@')[0],
+			avatarUrl: profileRow?.avatar_url ?? user.avatarUrl ?? null,
+			address: profileRow?.address_text ?? null
 		};
 
-		return json(myPageData);
+		const courses = (courseRows ?? [])
+			.map(mapUserCourse)
+			.filter((course): course is UserCourseSummary => course !== null);
+
+		const myPage: MyPageData = {
+			profile,
+			courses
+		};
+
+		return json(myPage);
 	} catch (error) {
 		console.error('Error fetching my page data:', error);
 		return json(

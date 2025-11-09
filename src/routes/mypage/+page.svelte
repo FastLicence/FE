@@ -9,7 +9,7 @@
 			requiresAuth: boolean;
 			profile: UserProfile | null;
 			courses: UserCourseSummary[];
-			usedFallback?: boolean;
+			error?: { message: string } | null;
 		};
 	}>();
 
@@ -99,9 +99,9 @@
 		</div>
 	</div>
 
-	{#if data.usedFallback}
+	{#if data.error}
 		<div role="alert" class="alert alert-warning text-sm">
-			임시 데이터를 표시 중입니다. 실제 API 연동 후 다시 확인해주세요.
+			{data.error.message}
 		</div>
 	{/if}
 

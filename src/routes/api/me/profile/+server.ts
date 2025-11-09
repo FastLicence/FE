@@ -1,22 +1,8 @@
 import { json } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
 import type { UserProfile } from '$lib/types';
-import { updateMockProfile } from '$lib/mocks/profile';
+import { getSupabaseServerClient } from '$lib/server/supabaseClient';
 
-/**
- * PATCH /api/me/profile
- * 사용자 프로필 수정
- *
- * Request body:
- * - nickname?: string
- * - address?: string
- * - avatarUrl?: string
- *
- * Returns:
- * - Updated UserProfile
- *
- * Requires: Authentication
- */
 export const PATCH: RequestHandler = async ({ request, locals }) => {
 	try {
 		const user = locals.user;
@@ -34,9 +20,8 @@ export const PATCH: RequestHandler = async ({ request, locals }) => {
 		}
 
 		const body = await request.json();
-		const { nickname, address, avatarUrl } = body;
+		const { nickname, address, avatarUrl } = body as Partial<UserProfile>;
 
-		// 유효성 검사
 		if (nickname !== undefined && typeof nickname !== 'string') {
 			return json(
 				{
@@ -61,32 +46,43 @@ export const PATCH: RequestHandler = async ({ request, locals }) => {
 			);
 		}
 
-		// TODO: Supabase 연동
-		// const { data, error } = await supabase
-		//   .from('users')
-		//   .update({
-		//     nickname: nickname ?? undefined,
-		//     address_text: address ?? undefined,
-		//     avatar_url: avatarUrl ?? undefined,
-		//     updated_at: new Date().toISOString()
-		//   })
-		//   .eq('id', user.id)
-		//   .select()
-		//   .single();
-
-		// 임시: 목업 데이터 업데이트
-		const updatedProfile = updateMockProfile({ nickname, address, avatarUrl });
-
-		// 실제 사용자 정보 반영
-		const result: UserProfile = {
-			id: user.id,
-			email: user.email,
-			nickname: nickname ?? user.nickname ?? user.email.split('@')[0],
-			avatarUrl: avatarUrl ?? user.avatarUrl ?? null,
-			address: address ?? updatedProfile.address
+		const supabase = getSupabaseServerClient();
+		const updates: Record<string, string | null> = {
+			updated_at: new Date().toISOString()
 		};
 
-		return json(result);
+		if (nickname !== undefined) {
+			updates.nickname = nickname;
+		}
+
+		if (address !== undefined) {
+			updates.address_text = address;
+		}
+
+		if (avatarUrl !== undefined) {
+			updates.avatar_url = avatarUrl;
+		}
+
+		const { data, error } = await supabase
+			.from('users')
+			.update(updates)
+			.eq('id', user.id)
+			.select('nickname, address_text, avatar_url')
+			.single();
+
+		if (error) {
+			throw error;
+		}
+
+		const profile: UserProfile = {
+			id: user.id,
+			email: user.email,
+			nickname: data.nickname ?? user.nickname ?? user.email.split('@')[0],
+			avatarUrl: data.avatar_url ?? user.avatarUrl ?? null,
+			address: data.address_text ?? null
+		};
+
+		return json(profile);
 	} catch (error) {
 		console.error('Error updating profile:', error);
 		return json(

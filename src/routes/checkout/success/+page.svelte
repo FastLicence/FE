@@ -9,7 +9,7 @@
 			orderNumber: string;
 			confirmation: PaymentConfirmation;
 			course: CourseDetail | null;
-			usedFallback: boolean;
+			error?: { message: string } | null;
 		};
 	}>();
 
@@ -51,12 +51,12 @@
 </svelte:head>
 
 <section class="mx-auto max-w-3xl space-y-8 animate-fade-in">
-	{#if data.usedFallback}
+	{#if data.error}
 		<div role="status" class="alert alert-warning shadow-md rounded-2xl text-sm">
 			<svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
 				<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
 			</svg>
-			<span>네트워크 문제로 임시 결제 데이터를 표시하고 있어요. 관리자 확인 후 자동으로 업데이트됩니다.</span>
+			<span>{data.error.message}</span>
 		</div>
 	{/if}
 
